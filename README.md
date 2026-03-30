@@ -1,13 +1,13 @@
-# Sopra Pool Controller – Home Assistant Custom Integration
+# Sopra Pool Control – Home Assistant Custom Integration
 
-> **Status:** Custom Component (local install) • **IoT Class:** `local_polling` • **Login:** not required  
+> **Status:** Custom Component (hacs install) • **IoT Class:** `local_polling` • **Login:** not required  
 > This integration reads data from `ajax_data.json` and writes parameters via `input.cgi`.
 
 ---
 
 ## Overview
 
-This custom integration connects a **Sopra Pool Controller** (or a compatible device with the same web interface) to Home Assistant.
+This custom integration connects a **Sopra Test Premium** (or a compatible device with the same web interface) to Home Assistant. Tested with Sopra Test Premium 17
 
 - **Read (polling):** `http://<host>/ajax_data.json`
 - **Write (control):** `http://<host>/input.cgi?wi=<w>&<t>=<value>`
@@ -16,7 +16,7 @@ This custom integration connects a **Sopra Pool Controller** (or a compatible de
   - Operating mode / status flags from `d0` / `d1`
   - Control entities from `lang.xml` (`number` / `switch` / `text`)
 
-> Current assumptions based on your setup: **no login required** and `ajax_data.json` is served from the **root** of the device (no subfolder).
+> Current implementation without login and `ajax_data.json` served from the **root** of the device (no subfolder).
 
 ---
 
@@ -90,8 +90,6 @@ The integration currently exposes operating mode as a **numeric code**.
     - `d0_raw`, `d1_raw`
     - `d0_parsed`, `d1_parsed`
 
-> Once a reliable mapping is available (e.g., from the original JavaScript parser), this can be upgraded to a `select` entity with human-readable options.
-
 
 ### Control functions (lang.xml → number/switch/text)
 
@@ -119,16 +117,16 @@ XML example:
 
 ## Installation
 
-1) Copy the component folder into your Home Assistant config:
+1) Install via HACS or copy the component folder into your Home Assistant config:
 
 ```text
-<HA config>/custom_components/sopra/
+<HA config>/custom_components/sopra_pool_control/
 ```
 
 Example structure:
 
 ```text
-custom_components/sopra/
+custom_components/sopra_pool_control/
 ├── __init__.py
 ├── api.py
 ├── config_flow.py
@@ -148,7 +146,7 @@ custom_components/sopra/
 
 3) Add the integration:
 - **Settings → Devices & Services → Add Integration**
-- Search for **"Sopra Pool Controller"**
+- Search for **"Sopra Pool Control"**
 - Enter the host/IP (e.g., `192.168.200.11`)
 
 ---

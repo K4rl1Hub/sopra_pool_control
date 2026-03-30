@@ -1,5 +1,5 @@
 {
-  "domain": "sopra",
+  "domain": "sopra_pool_control",
   "name": "Sopra Pool Control",
   "version": "1.0.0",
   "integration_type": "hub",
