@@ -1,7 +1,7 @@
 {
   "domain": "sopra_pool_control",
   "name": "Sopra Pool Control",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "integration_type": "hub",
   "iot_class": "local_polling",
   "documentation": "https://github.com/K4rl1Hub/sopra_pool_control",
