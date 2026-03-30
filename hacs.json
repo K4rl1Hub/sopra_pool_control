@@ -1,5 +1,5 @@
 
-hacs = {
+{
   "name": "Sopra Pool Control",
   "content_in_root": false,
   "country": "DE"
