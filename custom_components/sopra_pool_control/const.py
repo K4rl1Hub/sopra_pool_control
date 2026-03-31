@@ -1,4 +1,4 @@
-DOMAIN = "sopra"
+DOMAIN = "sopra_pool_control"
 PLATFORMS = ["sensor", "binary_sensor", "number", "switch", "text"]
 
 DEFAULT_SCAN_INTERVAL = 10  # seconds

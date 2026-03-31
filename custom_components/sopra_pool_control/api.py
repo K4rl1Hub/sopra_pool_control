@@ -1,204 +1,173 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Optional
-import xml.etree.ElementTree as ET
+from typing import Any, Optional
+from urllib.parse import urlencode
 
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-def split_semicolon(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    parts = raw.split(";")
-    # Antworten enden oft mit ';' -> letzter Eintrag leer
-    if parts and parts[-1] == "":
-        parts = parts[:-1]
-    return parts
-
-
-def parse_pairs(raw: str | None) -> dict[int, str]:
-    """
-    d3/d8 sind typischerweise: "ID;VALUE;ID;VALUE;..."
-    """
-    parts = split_semicolon(raw)
-    out: dict[int, str] = {}
-    i = 0
-    while i + 1 < len(parts):
-        try:
-            k = int(parts[i])
-            v = parts[i + 1]
-            out[k] = v
-        except Exception:
-            pass
-        i += 2
-    return out
-
-
-def parse_d6_units(raw: str | None) -> dict[int, str]:
-    """
-    Beispiel: "2;6000;%;6001;min;"
-    -> {6000:"%", 6001:"min"}
-    """
-    parts = split_semicolon(raw)
-    out: dict[int, str] = {}
-    if not parts:
-        return out
-    i = 1  # erstes Feld ist meist Anzahl
-    while i + 1 < len(parts):
-        try:
-            uid = int(parts[i])
-            unit = parts[i + 1]
-            out[uid] = unit
-        except Exception:
-            pass
-        i += 2
-    return out
-
-
-def parse_int_list(raw: str | None) -> list[int]:
-    parts = split_semicolon(raw)
-    out: list[int] = []
-    for p in parts:
-        try:
-            out.append(int(p))
-        except Exception:
-            pass
-    return out
-
-
-def alarm_level_from_d8(d8_raw: str | None, alarm_id: int) -> int:
-    pairs = parse_pairs(d8_raw)
-    try:
-        return int(pairs.get(alarm_id, "0"))
-    except Exception:
-        return 0
-
-
-def alarm_text(level: int) -> str:
-    # nach deiner Logik: 0 ok, 1 warn, 2 alarm
-    if level >= 2:
-        return "alarm"
-    if level == 1:
-        return "warnung"
-    return "ok"
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ParamDef:
-    group_title: str          # z.B. "Chlor" oder "System"
-    label: str                # z.B. "Sollwert"
-    param_id: int             # z.B. 4500 (Wert kommt aus d3)
-    wi: int                   # z.B. 450  (Write-Index)
-    t: str                    # f2/i/b/s/wp/xv/uc...
-    unit_id: Optional[int]
-    rng: Optional[tuple[float, float]]
-    decimals: Optional[int]
-    step: Optional[float]
-
-
-def parse_lang_xml(
-    xml_text: str,
-    t_labels: dict[str, str],
-    measurement_names: dict[int, str],
-) -> list[ParamDef]:
+class SopraEndpoints:
     """
-    Liest aus lang.xml alle writebaren Parameter:
-      <in w="..." t="...">PARAM_ID</in>
-    und erzeugt ParamDef.
+    Central place for endpoint names.
+    According to your setup:
+      - ajax_data.json is available directly under the root of the device.
+      - input.cgi is available directly under the root as well.
+      - lang.xml is available directly under the root as well.
     """
-    root = ET.fromstring(xml_text)
-    out: list[ParamDef] = []
+    ajax_data: str = "ajax_data.json"
+    lang_xml: str = "lang.xml"
+    input_cgi: str = "input.cgi"
+    ajax_dataT: tuple[str, ...] = ("ajax_dataT_.json", "ajax_dataT.json")  # optional
 
-    for no in root.findall(".//no"):
-        na = no.find("na")
-        if na is None:
-            continue
 
-        t_group = na.get("T_")           # z.B. "2" Parameter
-        txt_measure = na.get("txt")      # z.B. "2000" -> Chlor (Gruppe)
+def _build_url(host: str, path: str) -> str:
+    """Build URL for device resources (root based)."""
+    return f"http://{host}/{path.lstrip('/')}"
 
-        group_title: str | None = None
-        if txt_measure:
-            try:
-                mid = int(txt_measure)
-                group_title = measurement_names.get(mid, f"Messwert {mid}")
-            except Exception:
-                group_title = txt_measure
 
-        if group_title is None:
-            group_title = t_labels.get(t_group or "", f"T_{t_group}") if t_group else "Sopra"
+async def http_get_json(hass, host: str, path: str, timeout: int = 10) -> dict[str, Any]:
+    """
+    Low-level helper: GET JSON from http://<host>/<path>.
+    """
+    session = async_get_clientsession(hass)
+    url = _build_url(host, path)
+    _LOGGER.debug("GET JSON %s", url)
+    async with session.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        return await resp.json()
 
-        for va in no.findall("va"):
-            vn = va.find("vn")
-            in_el = va.find("in")
-            un_el = va.find("un")
 
-            if in_el is None:
-                continue
+async def http_get_text(hass, host: str, path: str, timeout: int = 10) -> str:
+    """
+    Low-level helper: GET text from http://<host>/<path>.
+    """
+    session = async_get_clientsession(hass)
+    url = _build_url(host, path)
+    _LOGGER.debug("GET TEXT %s", url)
+    async with session.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        return await resp.text()
 
-            w = in_el.get("w")
-            t = in_el.get("t")
-            if not w or not t:
-                continue
 
-            try:
-                wi = int(w)
-            except Exception:
-                continue
+async def http_get_bytes(hass, host: str, path: str, timeout: int = 10) -> bytes:
+    """
+    Low-level helper: GET raw bytes from http://<host>/<path>.
+    """
+    session = async_get_clientsession(hass)
+    url = _build_url(host, path)
+    _LOGGER.debug("GET BYTES %s", url)
+    async with session.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        return await resp.read()
 
-            try:
-                param_id = int((in_el.text or "").strip())
-            except Exception:
-                continue
 
-            label = "Parameter"
-            if vn is not None:
-                t_label = vn.get("T_")
-                if t_label:
-                    label = t_labels.get(t_label, f"T_{t_label}")
-                elif vn.text and vn.text.strip():
-                    label = vn.text.strip()
+async def write_input_cgi(
+    hass,
+    host: str,
+    wi: int,
+    t: str,
+    value: str | int | float,
+    timeout: int = 10,
+) -> None:
+    """
+    Write a value via input.cgi.
 
-            unit_id = None
-            if un_el is not None and un_el.text and un_el.text.strip().isdigit():
-                unit_id = int(un_el.text.strip())
+    The Sopra web UI uses a query style like:
+      /input.cgi?wi=<wi>&<t>=<value>
 
-            rng = None
-            g = in_el.get("g")
-            if g and ";" in g:
-                try:
-                    lo, hi = g.split(";", 1)
-                    rng = (float(lo), float(hi))
-                except Exception:
-                    rng = None
+    Examples:
+      /input.cgi?wi=450&f2=1.20
+      /input.cgi?wi=111&b=2
+      /input.cgi?wi=22&s=sopra-test
+    """
+    session = async_get_clientsession(hass)
+    params = {"wi": str(wi), t: str(value)}
+    url = _build_url(host, SopraEndpoints().input_cgi) + "?" + urlencode(params)
 
-            decimals = None
-            d = in_el.get("d")
-            if d and d.isdigit():
-                decimals = int(d)
+    _LOGGER.debug("WRITE %s", url)
+    async with session.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        # Some devices return a small body, some return empty -> just read to finish the request.
+        await resp.read()
 
-            step = None
-            if t in ("f", "f2"):
-                if decimals is not None:
-                    step = 10 ** (-decimals)
-                elif t == "f2":
-                    step = 0.01
-                else:
-                    step = 0.1
-            elif t in ("i", "uc", "xv"):
-                step = 1
 
-            out.append(
-                ParamDef(
-                    group_title=group_title,
-                    label=label,
-                    param_id=param_id,
-                    wi=wi,
-                    t=t,
-                    unit_id=unit_id,
-                    rng=rng,
-                    decimals=decimals,
-                    step=step,
-                )
-            )
+# ---------------------------------------------------------------------------
+# Functional (non-class) high level helpers
+# ---------------------------------------------------------------------------
 
-    return out
+async def fetch_ajax_data(hass, host: str, timeout: int = 10) -> dict[str, Any]:
+    """Fetch the main data payload from ajax_data.json."""
+    ep = SopraEndpoints()
+    return await http_get_json(hass, host, ep.ajax_data, timeout=timeout)
+
+
+async def fetch_lang_xml(hass, host: str, timeout: int = 10) -> str:
+    """Fetch lang.xml (configuration/mapping)."""
+    ep = SopraEndpoints()
+    return await http_get_text(hass, host, ep.lang_xml, timeout=timeout)
+
+
+async def try_fetch_labels(hass, host: str, timeout: int = 10) -> Optional[dict[str, Any]]:
+    """
+    Try to fetch optional label mappings from ajax_dataT_.json or ajax_dataT.json.
+    Returns the JSON dict if found, else None.
+    """
+    ep = SopraEndpoints()
+    for candidate in ep.ajax_dataT:
+        try:
+            return await http_get_json(hass, host, candidate, timeout=timeout)
+        except Exception as err:
+            _LOGGER.debug("Optional labels %s not available: %s", candidate, err)
+    return None
+
+
+async def set_value(hass, host: str, wi: int, t: str, value: str | int | float, timeout: int = 10) -> None:
+    """Convenience wrapper around write_input_cgi."""
+    await write_input_cgi(hass, host, wi, t, value, timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
+# Class-based API wrapper (for Coordinator / ConfigFlow compatibility)
+# ---------------------------------------------------------------------------
+
+class SopraApi:
+    """
+    Thin OO wrapper so the integration can do:
+        from .api import SopraApi
+        api = SopraApi(hass, host)
+        await api.get_json("ajax_data.json")
+        await api.set_value(wi, t, value)
+
+    This fixes the HA import error when other modules expect SopraApi to exist.
+    """
+
+    def __init__(self, hass, host: str, endpoints: SopraEndpoints | None = None):
+        self.hass = hass
+        self.host = host
+        self.endpoints = endpoints or SopraEndpoints()
+
+    def url(self, path: str) -> str:
+        return _build_url(self.host, path)
+
+    async def get_json(self, path: str, timeout: int = 10) -> dict[str, Any]:
+        return await http_get_json(self.hass, self.host, path, timeout=timeout)
+
+    async def get_text(self, path: str, timeout: int = 10) -> str:
+        return await http_get_text(self.hass, self.host, path, timeout=timeout)
+
+    async def fetch_ajax_data(self, timeout: int = 10) -> dict[str, Any]:
+        return await fetch_ajax_data(self.hass, self.host, timeout=timeout)
+
+    async def fetch_lang_xml(self, timeout: int = 10) -> str:
+        return await fetch_lang_xml(self.hass, self.host, timeout=timeout)
+
+    async def try_fetch_labels(self, timeout: int = 10) -> Optional[dict[str, Any]]:
+        return await try_fetch_labels(self.hass, self.host, timeout=timeout)
+
+    async def set_value(self, wi: int, t: str, value: str | int | float, timeout: int = 10) -> None:
+        await write_input_cgi(self.hass, self.host, wi, t, value, timeout=timeout)
