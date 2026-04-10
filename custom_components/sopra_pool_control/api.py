@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -39,7 +40,36 @@ async def http_get_json(hass, host: str, path: str, timeout: int = 10) -> dict[s
     _LOGGER.debug("GET JSON %s", url)
     async with session.get(url, timeout=timeout) as resp:
         resp.raise_for_status()
-        return await resp.json(content_type=None)
+        
+        text = await resp.text()
+        if not text:
+            raise ValueError(f"Empty response from {url}")
+
+        text_stripped = text.strip()
+
+        # Entferne BOM falls vorhanden
+        if text_stripped.startswith("\ufeff"):
+            text_stripped = text_stripped.lstrip("\ufeff")
+
+        # Defensive Prüfung: sieht es wie JSON aus?
+        if not (text_stripped.startswith("{") or text_stripped.startswith("[")):
+            _LOGGER.error(
+                "Expected JSON from %s but got non-JSON response (first 200 chars): %r",
+                url,
+                text_stripped[:200],
+            )
+            raise ValueError(f"Non-JSON response from {url}")
+
+        try:
+            return json.loads(text_stripped)
+        except json.JSONDecodeError as err:
+            _LOGGER.error(
+                "JSON decode failed for %s (first 200 chars): %r",
+                url,
+                text_stripped[:200],
+            )
+            raise
+
 
 
 async def http_get_text(hass, host: str, path: str, timeout: int = 10) -> str:
