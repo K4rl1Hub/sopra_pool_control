@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 import xml.etree.ElementTree as ET
 
 
-def split_semicolon(raw: str) -> list[str]:
+def split_semicolon(raw: Optional[str]) -> list[str]:
     if raw is None:
         return []
     parts = raw.split(";")
@@ -15,7 +15,7 @@ def split_semicolon(raw: str) -> list[str]:
     return parts
 
 
-def parse_pairs(raw: str) -> dict[int, str]:
+def parse_pairs(raw: Optional[str]) -> dict[int, str]:
     """
     d3/d8 sind typischerweise: "ID;VALUE;ID;VALUE;..."
     """
@@ -33,7 +33,7 @@ def parse_pairs(raw: str) -> dict[int, str]:
     return out
 
 
-def parse_d6_units(raw: str) -> dict[int, str]:
+def parse_d6_units(raw: Optional[str]) -> dict[int, str]:
     """
     Beispiel: "2;6000;%;6001;min;"
     """
@@ -54,26 +54,12 @@ def parse_d6_units(raw: str) -> dict[int, str]:
     return out
 
 
-def parse_d0(raw: str) -> list[int]:
-    parts = split_semicolon(raw)
-    out = []
-    for p in parts:
-        try:
-            out.append(int(p))
-        except Exception:
-            pass
-    return out
+def parse_d0(raw: Optional[str]) -> list[int]:
+    return parse_int_list(raw)
 
 
-def parse_d1(raw: str) -> list[int]:
-    parts = split_semicolon(raw)
-    out = []
-    for p in parts:
-        try:
-            out.append(int(p))
-        except Exception:
-            pass
-    return out
+def parse_d1(raw: Optional[str]) -> list[int]:
+    return parse_int_list(raw)
 
 
 def alarm_level_from_d8(d8_raw: str, alarm_id: int = 22) -> int:
@@ -228,4 +214,18 @@ def parse_lang_xml(
                 )
             )
 
+    return out
+
+def parse_int_list(raw: Optional[str]) -> list[int]:
+    """
+    Parse 'd0' / 'd1' style values like: '1;0;' -> [1, 0]
+    Ignores non-numeric parts gracefully.
+    """
+    out: list[int] = []
+    for p in split_semicolon(raw):
+        try:
+            out.append(int(p))
+        except Exception:
+            # ignore invalid fragments
+            continue
     return out
