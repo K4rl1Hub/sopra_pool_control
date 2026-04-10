@@ -39,7 +39,7 @@ async def http_get_json(hass, host: str, path: str, timeout: int = 10) -> dict[s
     _LOGGER.debug("GET JSON %s", url)
     async with session.get(url, timeout=timeout) as resp:
         resp.raise_for_status()
-        return await resp.json()
+        return await resp.json(content_type=None)
 
 
 async def http_get_text(hass, host: str, path: str, timeout: int = 10) -> str:
