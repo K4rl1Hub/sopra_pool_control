@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import SopraApi
-from .const import DEFAULT_SCAN_INTERVAL, DEFAULT_T_LABELS, MEASUREMENTS
+from .const import DEFAULT_SCAN_INTERVAL, DEFAULT_T_LABELS, MEASUREMENTS, DOMAIN
 from .parser import (
     parse_pairs,
     parse_d6_units,
@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 class SopraCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass, api: SopraApi, scan_interval: int = DEFAULT_SCAN_INTERVAL):
         self.api = api
-        self.t_labels: dict[str, str] = dict(DEFAULT_T_LABELS)
+        self.t_labels: dict[str, str] = DEFAULT_T_LABELS.copy()
 
         self.units: dict[int, str] = {}
         self.d3: dict[int, str] = {}
@@ -34,7 +34,7 @@ class SopraCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
-            name="sopra",
+            name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
         )
 
